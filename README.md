@@ -16,5 +16,5 @@ Usage
 =====
 
 ```
-python floodimpact.py 0 20 20 0 2012-11-01
+python floodimpact.py 0 20 20 0 2012-07-01 -u 1012-11-01
 ```

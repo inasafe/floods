@@ -424,6 +424,7 @@ if __name__=="__main__":
     if not os.path.exists(data_dir):
         os.mkdir(data_dir)
 
+    print 'Downloading layers'
     # Download the layers for the given viewport and timespan.
     download(the_viewports, the_timespan, data_dir)
 
