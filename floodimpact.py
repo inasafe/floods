@@ -391,7 +391,7 @@ if __name__=="__main__":
 
     parser.add_argument("-d", "--dest", dest="data", type=str,
                 help="Destination directory. (defaults to current directory)",
-                default=os.getcwd())
+                default=os.path.join(os.getcwd(), 'data'))
 
     parser.add_argument("-p", "--population", dest="population", type=str,
                 help="Population filename. (defaults to population.tif)",
@@ -419,8 +419,11 @@ if __name__=="__main__":
 
     data_dir = os.path.abspath(args.data)
 
+    if not os.path.exists(data_dir):
+        os.mkdir(data_dir)
+
     # Download the layers for the given viewport and timespan.
-    #download(the_viewports, the_timespan, data_dir)
+    download(the_viewports, the_timespan, data_dir)
 
     merged_files = merge(the_timespan, data_dir)
 
