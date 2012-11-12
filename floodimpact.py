@@ -196,6 +196,7 @@ def download(the_viewports, the_timespan, data_dir):
                 filename = os.path.join(data_dir, name)
                 if not os.path.exists(filename):
                     if urllib.urlopen(url).code == 200:
+                        print 'downloading %s' % url
                         urllib.urlretrieve(url, filename)
 
 
@@ -214,6 +215,7 @@ def merge(the_timespan, data_dir, prefix="MWP"):
         output_name = "floods_%s.tif" % time
         output_file = os.path.join(data_dir, output_name)
         if not os.path.exists(output_file):
+            print 'merging %s' % output_file
             files = glob.glob('%s*%s*' % (prefix, time))
             input_files = [os.path.join(data_dir, file) for file in files]
             subprocess.call(['gdal_merge.py',
@@ -434,15 +436,15 @@ if __name__=="__main__":
     temp = os.path.join(data_dir, 'flood_severity.tif')
 
     if not os.path.exists(temp):
-    	flood_severity = flood_severity(merged_files)
-    	flood_severity.write_to_file(temp)
+        flood_severity = flood_severity(merged_files)
+        flood_severity.write_to_file(temp)
 
-    	subprocess.call(['gdal_merge.py',
+        subprocess.call(['gdal_merge.py',
                      '-co', 'compress=packbits',
                      '-o', 'flood_severity_compressed.tif',
                      temp], stdout=open(os.devnull, 'w'))
-    	os.remove(temp)
-    	os.rename('flood_severity_compressed.tif', temp)
+        os.remove(temp)
+        os.rename('flood_severity_compressed.tif', temp)
     else:
 	flood_severity = read_layer(temp)
     exposure_layer = clip(population_file, bbox)
