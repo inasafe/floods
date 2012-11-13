@@ -227,6 +227,8 @@ def merge(the_timespan, data_dir, prefix="MWP"):
                              + input_files,
                              stdout=open(os.devnull, 'w')
                              )
+            out.append(output_file)
+            
     return out
 
 
