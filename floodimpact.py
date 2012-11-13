@@ -196,7 +196,7 @@ def download(the_viewports, the_timespan, data_dir):
                 filename = os.path.join(data_dir, name)
                 if not os.path.exists(filename):
                     if urllib.urlopen(url).code == 200:
-                        print 'downloading %s' % url
+                        print 'opened connection to %s' % url
                         urllib.urlretrieve(url, filename)
 
 
@@ -377,49 +377,29 @@ def flood_severity(hazard_files):
                          })
     return R
 
-if __name__=="__main__":
-    parser = argparse.ArgumentParser(description='Process flood imagery from modis.')
+def start(west,north,east,south, since, data_dir=None, until =None):
 
-    parser.add_argument("west", type=int, help="west coordinate in lat long (e.g. 0)")
-    parser.add_argument("north", type=int, help="north coordinate in lat long (e.g. 20")
-    parser.add_argument("east", type=int, help="east coordinate in lat long (e.g. 20)")
-    parser.add_argument("south", type=int, help="south coordinate in lat long (e.g. 0)")
-    parser.add_argument("since", type=str,
-                        help="Day in the form of YYYY-MM-DD (e.g. 2012-01-23)")
+    bbox = (west, north, east, south)
 
-    parser.add_argument("-u", "--until", dest="until", type=str,
-                help="Day in the form of YYYY-MM-DD. (defaults to today)",
-                default=datetime.date.today())
+    year, month, day = [int(x) for x in since.split('-')]
+    since = datetime.date(year, month, day)
 
-    parser.add_argument("-d", "--dest", dest="data", type=str,
-                help="Destination directory. (defaults to current directory)",
-                default=os.path.join(os.getcwd(), 'data'))
-
-    parser.add_argument("-p", "--population", dest="population", type=str,
-                help="Population filename. (defaults to population.tif)",
-                default='population.tif')
-
-    args = parser.parse_args()
-    bbox = (args.west, args.north, args.east, args.south)
+    if not isinstance(until, datetime.date):
+        year, month, day = [int(x) for x in until.split('-')]
+        until = datetime.date(year, month, day)
+    else:
+        until = until
 
     # Make sure the inputs are divisible by 10.
     for item in bbox:
         msg = "%d is not divisible by 10." % item
         assert int(item) % 10 == 0, msg
 
-    year, month, day = [int(x) for x in args.since.split('-')]
-    since = datetime.date(year, month, day)
-
-    if not isinstance(args.until, datetime.date):
-        year, month, day = [int(x) for x in args.until.split('-')]
-        until = datetime.date(year, month, day)
-    else:
-        until = args.until
-
     the_viewports = viewports(bbox)
     the_timespan = timespan(since, until)
 
-    data_dir = os.path.abspath(args.data)
+    print 'viewports generated'
+    data_dir = os.path.abspath(data_dir)
 
     if not os.path.exists(data_dir):
         os.mkdir(data_dir)
@@ -467,3 +447,29 @@ if __name__=="__main__":
     count = impact.keywords['count']
     pretty_date = until.strftime('%a %d, %b %Y')
 #    print pretty_date, "|", "People affected: %s / %s" % (count, impact.keywords['total'])
+
+if __name__=="__main__":
+    parser = argparse.ArgumentParser(description='Process flood imagery from modis.')
+
+    parser.add_argument("west", type=int, help="west coordinate in lat long (e.g. 0)")
+    parser.add_argument("north", type=int, help="north coordinate in lat long (e.g. 20")
+    parser.add_argument("east", type=int, help="east coordinate in lat long (e.g. 20)")
+    parser.add_argument("south", type=int, help="south coordinate in lat long (e.g. 0)")
+    parser.add_argument("since", type=str,
+                        help="Day in the form of YYYY-MM-DD (e.g. 2012-01-23)")
+
+    parser.add_argument("-u", "--until", dest="until", type=str,
+                help="Day in the form of YYYY-MM-DD. (defaults to today)",
+                default=datetime.date.today())
+
+    parser.add_argument("-d", "--dest", dest="data", type=str,
+                help="Destination directory. (defaults to current directory)",
+                default=os.path.join(os.getcwd(), 'data'))
+
+    parser.add_argument("-p", "--population", dest="population", type=str,
+                help="Population filename. (defaults to population.tif)",
+                default='population.tif')
+
+    args = parser.parse_args()
+
+    start(args.west,args.north,args.east,args.south, args.since, until=args.until, data_dir=args.data)
