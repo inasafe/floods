@@ -261,7 +261,7 @@ def resample(files, population):
         out.append(sampled_output)
     return out
 
-def clip(raster, bbox):
+def clip(raster, bbox, theCellSize=None):
     """
     Clip the population dataset to the bounding box
     """
@@ -269,11 +269,25 @@ def clip(raster, bbox):
     clipped_raster = basename + "_clip" + ext
 
     if not os.path.exists(clipped_raster):
-        subprocess.call(['gdal_translate',
+        if theCellSize is None:
+            myCommand = ('gdalwarp -q -t_srs EPSG:4326 -r near '
+                         '-cutline %s -crop_to_cutline -of GTiff '
+                         '"%s" "%s"' % (myClipKml,
+                                        raster,
+                                        clipped_raster))
+        else:
+            myCommand = ('gdalwarp -q -t_srs EPSG:4326 -r near -tr %f %f '
+                         '-cutline %s -crop_to_cutline -of GTiff '
+                         '"%s" "%s"' % (theCellSize,
+                                        theCellSize,
+                                        myClipKml,
+                                        raster,
+                                        clipped_raster))
+        """subprocess.call(['gdal_translate',
                          '-projwin', str(bbox[0]), str(bbox[1]),
                                     str(bbox[2]), str(bbox[3]),
                          raster, clipped_raster],
-                         stdout=open(os.devnull, 'w'))
+                         stdout=open(os.devnull, 'w'))"""
 
     keywords_file = basename + '.keywords'
 
@@ -289,6 +303,44 @@ def clip(raster, bbox):
 
     return clipped_raster
 
+def extentToKml(theExtent):
+    """A helper to get a little kml doc for an extent so that
+    we can use it with gdal warp for clipping."""
+
+    myBottomLeftCorner = '%f,%f' % (theExtent[0], theExtent[1])
+    myTopLeftCorner = '%f,%f' % (theExtent[0], theExtent[3])
+    myTopRightCorner = '%f,%f' % (theExtent[2], theExtent[3])
+    myBottomRightCorner = '%f,%f' % (theExtent[2], theExtent[1])
+    myKml = ("""<?xml version="1.0" encoding="utf-8" ?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+  <Document>
+    <Folder>
+      <Placemark>
+        <Polygon>
+          <outerBoundaryIs>
+            <LinearRing>
+              <coordinates>
+                %s %s %s %s %s
+              </coordinates>
+            </LinearRing>
+          </outerBoundaryIs>
+        </Polygon>
+      </Placemark>
+    </Folder>
+  </Document>
+</kml>""" %
+    (myBottomLeftCorner,
+     myTopLeftCorner,
+     myTopRightCorner,
+     myBottomRightCorner,
+     myBottomLeftCorner))
+
+    myFilename = tempfile.mkstemp('.kml', 'extent_',
+                                      temp_dir())[1]
+    myFile = file(myFilename, 'wt')
+    myFile.write(myKml)
+    myFile.close()
+    return myFilename
 
 FLOOD_KEYWORDS = """
 category:hazard
