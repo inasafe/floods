@@ -430,6 +430,7 @@ def start(west,north,east,south, since, data_dir=None, until =None):
             subprocess.call(['gdal_merge.py',
                      '-co', 'compress=packbits',
                      '-o', 'flood_severity_compressed.tif',
+                     '-ot', 'Byte',
                      flood_filename], stdout=open(os.devnull, 'w'))
             os.remove(flood_filename)
             os.rename('flood_severity_compressed.tif', flood_filename)
@@ -455,6 +456,7 @@ def start(west,north,east,south, since, data_dir=None, until =None):
     count = impact.keywords['count']
     pretty_date = until.strftime('%a %d, %b %Y')
     print pretty_date, "|", "People affected: %s / %s" % (count, impact.keywords['total'])
+
 
 if __name__=="__main__":
     parser = argparse.ArgumentParser(description='Process flood imagery from modis.')
