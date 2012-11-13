@@ -384,7 +384,7 @@ def flood_severity(hazard_files):
                          })
     return R
 
-def start(west,north,east,south, since, data_dir=None, until =None):
+def start(west,north,east,south, since, data_dir=None, until=None, population=None):
 
     bbox = (west, north, east, south)
 
@@ -437,7 +437,7 @@ def start(west,north,east,south, since, data_dir=None, until =None):
         else:
             raise Exception('No merged files found for %s' % the_timespan)
 
-    population_file = os.path.join(data_dir, args.population)
+    population_file = os.path.join(data_dir, population)
     exposure_layer = clip(population_file, bbox)
 
     [hazard_file] = resample([flood_filename], exposure_layer)
@@ -482,4 +482,4 @@ if __name__=="__main__":
 
     args = parser.parse_args()
 
-    start(args.west,args.north,args.east,args.south, args.since, until=args.until, data_dir=args.data)
+    start(args.west,args.north,args.east,args.south, args.since, until=args.until, data_dir=args.data, population=args.population)
