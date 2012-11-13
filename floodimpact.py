@@ -365,6 +365,8 @@ def flood_severity(hazard_files):
             # Add them to a list of ignored files
             ignored = ignored + 1
             print 'Ignoring file %s because it is incomplete' % hazard_filename
+    else:
+        raise Exception('No hazard layers found')
 
     # Create raster object and return
     R = Raster(I_sum,
@@ -417,8 +419,8 @@ def start(west,north,east,south, since, data_dir=None, until =None):
     temp = os.path.join(data_dir, 'flood_severity.tif')
 
     if not os.path.exists(temp):
-        flood_severity = flood_severity(merged_files)
-        flood_severity.write_to_file(temp)
+        flooded = flood_severity(merged_files)
+        flooded.write_to_file(temp)
 
         subprocess.call(['gdal_merge.py',
                      '-co', 'compress=packbits',
@@ -427,9 +429,9 @@ def start(west,north,east,south, since, data_dir=None, until =None):
         os.remove(temp)
         os.rename('flood_severity_compressed.tif', temp)
     else:
-	flood_severity = read_layer(temp)
-    exposure_layer = clip(population_file, bbox)
+	flooded = read_layer(temp)
 
+    exposure_layer = clip(population_file, bbox)
 
     [hazard_file] = resample([temp], exposure_layer)
 
