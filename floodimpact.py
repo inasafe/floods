@@ -327,17 +327,19 @@ def calculate(hazard_filename, exposure_filename):
     return calculated_raster
 
 
-def flood_severity(hazard_files):
+def _flood_severity(hazard_files):
     """
     Accumulate the hazard level
     """
     # Value above which people are regarded affected
     # For this dataset, 0 is no data, 1 is cloud, 2 is normal water level
     # and 3 is overflow.
-    threshold = 2.9
+    water_threshold = 3
+    cloud_no_data_threshold = 1
 
     # This is a scalar but will end up being a matrix
     I_sum = None
+    CN_sum = None
     projection = None
     geotransform = None
     total_days = len(hazard_files)
@@ -349,22 +351,39 @@ def flood_severity(hazard_files):
         # Extract data as numeric arrays
         D = layer.get_data(nan=0.0) # Depth
         # Assign ones where it is affected
-        I = numpy.where(D > threshold, 1, 0)
+        I = numpy.where(D > water_threshold, 1, 0)
+        CN = numpy.where(D <= cloud_no_data_threshold, 1, 0)
 
         # If this is the first file, use it to initialize the aggregated one and stop processing
-        if I_sum is None:
+        if I_sum is None and CN_sum is None:
             I_sum = I
+            CN_sum = CN
             projection=layer.get_projection()
             geotransform=layer.get_geotransform()
             continue
 
         # If it is not the first one, add it up if it has the right shape, otherwise, ignore it
-        if  I_sum.shape == I.shape:
+        if  I_sum.shape == I.shape and CN_sum.shape == CN.shape:
             I_sum = I_sum + I
+            CN_sum = CN_sum + CN
         else:
             # Add them to a list of ignored files
             ignored = ignored + 1
             print 'Ignoring file %s because it is incomplete' % hazard_filename
+
+    cloud_map = get_cloud_coverage(CN_sum, total_days, projection, geotransform)
+
+    # TODO download microwave base on availability (use dates??)
+    # if count cloud_map where 1 is 0, don't use microwave
+    # if there is a one in the map then get available microwaves
+
+    # if we got microwaves then microwave_flood=detect_microwave_flood
+    # multiply the cloud_map and the microwave_flood to get microwave flood under clouds (under_cloud_flood)
+
+    # reverse the cloud map to get 0 where is cloudy with 1-cloud_map
+    # multiply inverse_cloud_map * I_sum to get just not cloudy floods
+    # scale the under_cloud_flood to get total_days + 1 (under_cloud_map = under_cloud_floods * (total_days + 1))
+    # sum I_sum and under_cloud_map to get the mix of microwave and optical flooded areas
 
     # Create raster object and return
     R = Raster(I_sum,
@@ -375,7 +394,62 @@ def flood_severity(hazard_files):
                          'units': 'days', 'total_days': total_days,
                          'ignored': ignored,
                          })
+
     return R
+
+def get_cloud_coverage(cn_sum, num_files, projection, geotransform):
+    """
+    Verify where cloud coverage sum (cn_sum) is greater that the 70 percent of the number
+    of the considered dates (num_files).
+    Creates the cloud coverage source matrix and the corresponding tif file.
+    Returns the numpy matrix. 
+    """
+    # Percentage of time where the pixel was covered by clouds
+    days_threshold = 0.7 * len(num_files)
+
+    # 0 where we use NASA data, 1 is where we use microwave data
+    # this also means that 0 is no cloud covered and 1 is cloud covered
+    cloud_exceed = numpy.where(cn_sum > days_threshold, 1,0)
+
+    cc = Raster(cloud_exceed, projection=projection, geotransform=geotransform,name='Source map')
+    cc.write_to_file('source_map.tif')
+
+    return cloud_exceed
+
+def download_microwave(dates):
+    """
+    If microwave is available on the website download the all the available images 
+    in the dates range (python datetime).
+    """
+
+    # veify the available number of files
+    pass
+
+def detect_microwave_flood(hazard_filename, microwave_filename):
+    """
+    Verify the microwave format to check whether it contains information on normal
+     water (reference water levels). Detect water
+    """
+    water_normal_level = 2
+    microwave_water_level = 70000
+
+    hazard_layer = read_layer(hazard_filename)
+    D = hazard_layer.get_data(nan=0.0)
+    # 0 is normal water, 1 is no normal water
+    I = numpy.where(D = water_normal_level , 0, 1)
+
+    # TODO resample and clip the microwave to the hazard resolution
+    # we know that microwave bbox is always > hazard bbox
+
+    microwave_layer = read_layer(microwave_filename)
+    M = microwave_layer.get_data(nan=0.0)
+    # 0 is normal water, 1 is not equal to normal water TODO: check in the nasa files have the same normal water in all the dates
+    MW = numpy.where(M = microwave_water_level, 1, 0)
+
+    # 0 is not flood water, 1 is flood water
+    MW_flood = MW * I
+
+    return MW_flood
 
 def start(west,north,east,south, since, data_dir=None, until =None):
 
@@ -417,7 +491,7 @@ def start(west,north,east,south, since, data_dir=None, until =None):
     temp = os.path.join(data_dir, 'flood_severity.tif')
 
     if not os.path.exists(temp):
-        flood_severity = flood_severity(merged_files)
+        flood_severity = _flood_severity(merged_files)
         flood_severity.write_to_file(temp)
 
         subprocess.call(['gdal_merge.py',
