@@ -235,6 +235,19 @@ def resample(files, population):
     p = read_layer(population)
     res_x, res_y = p.get_resolution()
     out = []
+
+    #assume all hazard files have the same resolution
+    h = read_layer(files[0])
+    h_res_x, h_res_y = h.get_resolution()
+
+    if h_res_x < res_x and h_res_y < res_y:
+        subprocess.call(['gdalwarp',
+                             '-tr', str(h_res_x), str(h_res_y),
+                             population, population+'resampled'],
+                             stdout=open(os.devnull, 'w'))
+        os.remove(population)
+        os.rename(population+'resampled',population)
+
     for input_file in files:
         basename, ext = os.path.splitext(input_file)
         sampled_output = basename + "_resampled" + ext
@@ -246,24 +259,24 @@ def resample(files, population):
         out.append(sampled_output)
     return out
 
-
-def clip(population, bbox):
+def clip(raster, bbox):
     """
     Clip the population dataset to the bounding box
     """
-    basename, ext = os.path.splitext(population)
-    clipped_population = basename + "_clip" + ext
-    if not os.path.exists(clipped_population):
+    basename, ext = os.path.splitext(raster)
+    clipped_raster = basename + "_clip" + ext
+
+    if not os.path.exists(clipped_raster):
         subprocess.call(['gdal_translate',
                          '-projwin', str(bbox[0]), str(bbox[1]),
                                     str(bbox[2]), str(bbox[3]),
-                         population, clipped_population],
+                         raster, clipped_raster],
                          stdout=open(os.devnull, 'w'))
 
     keywords_file = basename + '.keywords'
 
     if os.path.exists(keywords_file):
-        basename, ext = os.path.splitext(clipped_population)
+        basename, ext = os.path.splitext(clipped_raster)
 
         clipped_keywords_file = basename + '.keywords'
 
@@ -272,7 +285,7 @@ def clip(population, bbox):
                 with open(clipped_keywords_file, 'w') as cf:
                     cf.write(f.read())
 
-    return clipped_population
+    return clipped_raster
 
 
 FLOOD_KEYWORDS = """
@@ -326,7 +339,7 @@ def calculate(hazard_filename, exposure_filename):
     return calculated_raster
 
 
-def flood_severity(hazard_files):
+def _flood_severity(hazard_files):
     """
     Accumulate the hazard level
     """
@@ -376,7 +389,7 @@ def flood_severity(hazard_files):
                          })
     return R
 
-def start(west,north,east,south, since, data_dir=None, until =None):
+def start(west,north,east,south, since, until =None, data_dir=None, population=None):
     
     bbox = (west, north, east, south)
 
@@ -397,7 +410,6 @@ def start(west,north,east,south, since, data_dir=None, until =None):
     the_viewports = viewports(bbox)
     the_timespan = timespan(since, until)
 
-    print 'viewports generated'
     data_dir = os.path.abspath(data_dir)
 
     if not os.path.exists(data_dir):
@@ -408,14 +420,14 @@ def start(west,north,east,south, since, data_dir=None, until =None):
 
     merged_files = merge(the_timespan, data_dir)
 
-    population_file = os.path.join(data_dir, args.population)
+    population_file = os.path.join(data_dir, population)
 
     #resampled_files = resample(merged_files, population_file)
 
     temp = os.path.join(data_dir, 'flood_severity.tif')
 
     if not os.path.exists(temp):
-    	flood_severity = flood_severity(merged_files)
+    	flood_severity = _flood_severity(merged_files)
     	flood_severity.write_to_file(temp)
 
     	subprocess.call(['gdal_merge.py',
@@ -425,9 +437,20 @@ def start(west,north,east,south, since, data_dir=None, until =None):
     	os.remove(temp)
     	os.rename('flood_severity_compressed.tif', temp)
     else:
-	flood_severity = read_layer(temp)
-    exposure_layer = clip(population_file, bbox)
+	   flood_severity = read_layer(temp)
+    
+    population_object = Raster(population_file)
 
+    # get population bbox
+    pop_bbox = population_object.get_bounding_box()
+    # rearrange the bbox to match the expected one
+    pop_bbox = [pop_bbox[0], pop_bbox[3], pop_bbox[2], pop_bbox[1]]
+
+    if pop_bbox[0] > bbox[0] and pop_bbox[1] < bbox[1] and pop_bbox[2] < bbox[2] and pop_bbox[3] > bbox[3]:
+        temp = clip(temp, pop_bbox)
+        exposure_layer = population_file
+    else:
+        exposure_layer = clip(population_file, bbox)
 
     [hazard_file] = resample([temp], exposure_layer)
 
@@ -468,6 +491,9 @@ if __name__=="__main__":
                 help="Population filename. (defaults to population.tif)",
                 default='population.tif')
 
+    #parser.add_argument("-c", "--clip", dest="clip", type=str,
+    #            help="Choose whether to clip hazard on population or population on hazard", default="population")
+
     args = parser.parse_args()
 
-    start(args.west,args.north,args.east,args.south, args.since, until=args.until, data_dir=args.data)
+    start(args.west, args.north, args.east, args.south, args.since, until=args.until, data_dir=args.data, population=args.population)
