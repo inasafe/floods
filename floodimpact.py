@@ -227,6 +227,7 @@ def merge(the_timespan, data_dir, prefix="MWP"):
                              + input_files,
                              stdout=open(os.devnull, 'w')
                              )
+            out.append(output_file)
     return out
 
 
@@ -261,7 +262,7 @@ def resample(files, population):
         out.append(sampled_output)
     return out
 
-def clip(raster, bbox, theCellSize=None):
+def clip(raster, bbox, cellSize=None):
     """
     Clip the population dataset to the bounding box
     """
@@ -269,17 +270,17 @@ def clip(raster, bbox, theCellSize=None):
     clipped_raster = basename + "_clip" + ext
 
     if not os.path.exists(clipped_raster):
-        if theCellSize is None:
-            myCommand = ('gdalwarp -q -t_srs EPSG:4326 -r near '
+        if cellSize is None:
+            subprocess.call('gdalwarp -q -t_srs EPSG:4326 -r near '
                          '-cutline %s -crop_to_cutline -of GTiff '
                          '"%s" "%s"' % (myClipKml,
                                         raster,
                                         clipped_raster))
         else:
-            myCommand = ('gdalwarp -q -t_srs EPSG:4326 -r near -tr %f %f '
+            subprocess.call('gdalwarp -q -t_srs EPSG:4326 -r near -tr %f %f '
                          '-cutline %s -crop_to_cutline -of GTiff '
-                         '"%s" "%s"' % (theCellSize,
-                                        theCellSize,
+                         '"%s" "%s"' % (cellSize,
+                                        cellSize,
                                         myClipKml,
                                         raster,
                                         clipped_raster))
@@ -478,8 +479,6 @@ def start(west,north,east,south, since, until =None, data_dir=None, population=N
     print 'Merging layers per day'
     merged_files = merge(the_timespan, data_dir)
 
-    #resampled_files = resample(merged_files, population_file)
-
     flood_filename = os.path.join(data_dir, 'flood_severity.tif')
 
     if not os.path.exists(flood_filename):
@@ -507,13 +506,16 @@ def start(west,north,east,south, since, until =None, data_dir=None, population=N
     # rearrange the bbox to match the expected one
     pop_bbox = [pop_bbox[0], pop_bbox[3], pop_bbox[2], pop_bbox[1]]
 
+    pop_resolution = population_object.get_resolution()[0]
+
     if pop_bbox[0] > bbox[0] and pop_bbox[1] < bbox[1] and pop_bbox[2] < bbox[2] and pop_bbox[3] > bbox[3]:
-        temp = clip(temp, pop_bbox)
+        hazard_file = clip(flood_filename, pop_bbox, cellSize=pop_resolution)
         exposure_layer = population_file
     else:
         exposure_layer = clip(population_file, bbox)
+        hazard_file = flood_filename
 
-    [hazard_file] = resample([flood_filename], exposure_layer)
+    #[hazard_file] = resample([flood_filename], exposure_layer)
 
     basename, ext = os.path.splitext(hazard_file)
     keywords_file = basename + '.keywords'
