@@ -157,7 +157,7 @@ def timespan(since, until):
     d = since
     delta = datetime.timedelta(days=1)
 
-    while d <= until:
+    while d <= (until - delta):
         year = d.year
         yday = d.timetuple().tm_yday
         identifier = '%s%s' % (year, yday)
@@ -214,18 +214,19 @@ def merge(the_timespan, data_dir, prefix="MWP"):
         os.chdir(data_dir)
         output_name = "floods_%s.tif" % time
         output_file = os.path.join(data_dir, output_name)
-        if not os.path.exists(output_file):
-            print 'merging %s' % output_file
+        if os.path.exists(output_file):
+            out.append(output_file)
+        else:
+            print ' - Merging %s' % output_file
             files = glob.glob('%s*%s*' % (prefix, time))
             input_files = [os.path.join(data_dir, file) for file in files]
             subprocess.call(['gdal_merge.py',
                              '-co', 'compress=packbits',
+                             '-ot', 'Byte',
                              '-o', output_file]
                              + input_files,
-                             stdout=open(os.devnull, 'w'))
-        if os.path.exists(output_file):
-            out.append(output_file)
-
+                             stdout=open(os.devnull, 'w')
+                             )
     return out
 
 
@@ -327,6 +328,9 @@ def calculate(hazard_filename, exposure_filename):
     return calculated_raster
 
 
+def accumulate(merged_files, flood_filename, threshold=3):
+    pass
+
 def flood_severity(hazard_files):
     """
     Accumulate the hazard level
@@ -342,8 +346,11 @@ def flood_severity(hazard_files):
     geotransform = None
     total_days = len(hazard_files)
     ignored = 0
+
+    print 'Accumulating layers'
+
     for hazard_filename in hazard_files:
-        print "Processing %s" % hazard_filename
+        print " - Processing %s" % hazard_filename
         layer = read_layer(hazard_filename)
 
         # Extract data as numeric arrays
@@ -365,8 +372,6 @@ def flood_severity(hazard_files):
             # Add them to a list of ignored files
             ignored = ignored + 1
             print 'Ignoring file %s because it is incomplete' % hazard_filename
-    else:
-        raise Exception('No hazard layers found')
 
     # Create raster object and return
     R = Raster(I_sum,
@@ -400,40 +405,41 @@ def start(west,north,east,south, since, data_dir=None, until =None):
     the_viewports = viewports(bbox)
     the_timespan = timespan(since, until)
 
-    print 'viewports generated'
+    print 'Viewports generated'
     data_dir = os.path.abspath(data_dir)
 
     if not os.path.exists(data_dir):
         os.mkdir(data_dir)
 
-    print 'Downloading layers'
+    print 'Downloading layers per day'
     # Download the layers for the given viewport and timespan.
     download(the_viewports, the_timespan, data_dir)
 
+    print 'Merging layers per day'
     merged_files = merge(the_timespan, data_dir)
 
-    population_file = os.path.join(data_dir, args.population)
+    flood_filename = os.path.join(data_dir, 'flood_severity.tif')
 
-    #resampled_files = resample(merged_files, population_file)
+    if not os.path.exists(flood_filename):
+        if len(merged_files) > 0:
+            # Add all the pixels with a value higher than 3.
+            #accumulate(merged_files, flood_filename, threshold=3)
+            flooded = flood_severity(merged_files)
+            flooded.write_to_file(flood_filename)
 
-    temp = os.path.join(data_dir, 'flood_severity.tif')
-
-    if not os.path.exists(temp):
-        flooded = flood_severity(merged_files)
-        flooded.write_to_file(temp)
-
-        subprocess.call(['gdal_merge.py',
+            subprocess.call(['gdal_merge.py',
                      '-co', 'compress=packbits',
                      '-o', 'flood_severity_compressed.tif',
-                     temp], stdout=open(os.devnull, 'w'))
-        os.remove(temp)
-        os.rename('flood_severity_compressed.tif', temp)
-    else:
-	flooded = read_layer(temp)
+                     flood_filename], stdout=open(os.devnull, 'w'))
+            os.remove(flood_filename)
+            os.rename('flood_severity_compressed.tif', flood_filename)
+        else:
+            raise Exception('No merged files found for %s' % the_timespan)
 
+    population_file = os.path.join(data_dir, args.population)
     exposure_layer = clip(population_file, bbox)
 
-    [hazard_file] = resample([temp], exposure_layer)
+    [hazard_file] = resample([flood_filename], exposure_layer)
 
     basename, ext = os.path.splitext(hazard_file)
     keywords_file = basename + '.keywords'
@@ -448,7 +454,7 @@ def start(west,north,east,south, since, data_dir=None, until =None):
 
     count = impact.keywords['count']
     pretty_date = until.strftime('%a %d, %b %Y')
-#    print pretty_date, "|", "People affected: %s / %s" % (count, impact.keywords['total'])
+    print pretty_date, "|", "People affected: %s / %s" % (count, impact.keywords['total'])
 
 if __name__=="__main__":
     parser = argparse.ArgumentParser(description='Process flood imagery from modis.')
