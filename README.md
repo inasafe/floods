@@ -28,7 +28,7 @@ untile_date: the end date to analyze in the form 'YYYY-MM-DD'
 
 data_folder: the path to the data folder
 
-population_file: the path to the population file tu use in the analysis
+population_file: the path to the population file to use in the analysis
 
 In order to run the tool make sure to have a population file downloaded in your most convenient folder
 ```

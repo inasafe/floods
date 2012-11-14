@@ -9,18 +9,34 @@ import glob
 import os
 import numpy
 
-from safe.api import read_layer, calculate_impact
+from functools import wraps
+
+from safe.api import calculate_impact
 from safe.storage.raster import Raster
 
 from utils import *
 from impact_functions import *
-
 
 FLOOD_KEYWORDS = """
 category:hazard
 subcategory:flood
 source:modis
 """
+
+if not '/usr/local/bin' in os.environ['PATH']:
+    os.environ['PATH'] = os.environ['PATH'] + ':/usr/local/bin'
+
+def read_layer(filename):
+    """Read spatial layer from file.
+    This can be either raster or vector data.
+    """
+    _, ext = os.path.splitext(filename)
+    if ext in ['.asc', '.tif', '.nc', '.adf']:
+        return Raster(filename)
+    else:
+        msg = ('Could not read %s. '
+               'Extension "%s" has not been implemented' % (filename, ext))
+        raise ReadLayerError(msg)
 
 def impact(hazard_files, exposure_file):
     """
@@ -119,7 +135,7 @@ def _flood_severity(hazard_files):
                          })
     return R
 
-def start(west,north,east,south, since, until =None, data_dir=None, population=None):
+def start(west,north,east,south, since, until=None, data_dir=None, population=None):
     
     bbox = (west, north, east, south)
 
@@ -173,22 +189,22 @@ def start(west,north,east,south, since, until =None, data_dir=None, population=N
     
     population_file = os.path.join(data_dir, population)
     population_object = Raster(population_file)
-
     # get population bbox
     pop_bbox = population_object.get_bounding_box()
 
     # get resolutions and pick the best
     pop_resolution = population_object.get_resolution()[0]
-    hazard_resolution = Raster(flood_filename).get_resolution()[0]
 
-    best_resolution = pop_resolution if pop_resolution < hazard_resolution else hazard_resolution
+    hazard_object = Raster(flood_filename)
+    hazard_resolution = hazard_object.get_resolution()[0]
+    hazard_bbox = hazard_object.get_bounding_box()
 
     if pop_bbox[0] > bbox[0] and pop_bbox[1] > bbox[1] and pop_bbox[2] < bbox[2] and pop_bbox[3] < bbox[3]:
-        hazard_file = clip(flood_filename, pop_bbox, cellSize=best_resolution)
+        hazard_file = clip(flood_filename, pop_bbox, cellSize=pop_resolution)
         exposure_layer = population_file
     else:
-        hazard_file = flood_filename
-        exposure_layer = clip(population_file, bbox)    
+        hazard_file = clip(flood_filename, hazard_bbox, cellSize=pop_resolution)
+        exposure_layer = clip(population_file, hazard_bbox, cellSize=None)    
 
     basename, ext = os.path.splitext(hazard_file)
     keywords_file = basename + '.keywords'

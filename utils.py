@@ -122,12 +122,14 @@ def clip(raster, bbox, cellSize=None):
 
     if not os.path.exists(clipped_raster):
         if cellSize is None:
-            command = "gdalwarp -q -t_srs EPSG:4326 -r near -cutline %s -crop_to_cutline %s %s" % (extentToKml(bbox),raster,clipped_raster)
+            command = "gdalwarp -q -t_srs EPSG:4326 -r near \
+             -cutline %s -crop_to_cutline %s %s" % (extentToKml(bbox),raster,clipped_raster)
             print command
 
             os.system(command)
         else:
-            command = "gdalwarp -q -t_srs EPSG:4326 -r near -tr %s %s -cutline %s -crop_to_cutline %s %s" % (cellSize,cellSize,extentToKml(bbox),raster,clipped_raster)
+            command = "gdalwarp -q -t_srs EPSG:4326 -r near \
+             -tr %s %s -cutline %s -crop_to_cutline %s %s" % (cellSize,cellSize,extentToKml(bbox),raster,clipped_raster)
             
             print command
            
