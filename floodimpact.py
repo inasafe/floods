@@ -101,28 +101,29 @@ def _flood_severity(hazard_files):
     print 'Accumulating layers'
 
     for hazard_filename in hazard_files:
-        print " - Processing %s" % hazard_filename
-        layer = read_layer(hazard_filename)
+        if os.path.exists(hazard_filename):
+            print " - Processing %s" % hazard_filename
+            layer = read_layer(hazard_filename)
 
-        # Extract data as numeric arrays
-        D = layer.get_data(nan=0.0) # Depth
-        # Assign ones where it is affected
-        I = numpy.where(D > threshold, 1, 0)
+            # Extract data as numeric arrays
+            D = layer.get_data(nan=0.0) # Depth
+            # Assign ones where it is affected
+            I = numpy.where(D > threshold, 1, 0)
 
-        # If this is the first file, use it to initialize the aggregated one and stop processing
-        if I_sum is None:
-            I_sum = I
-            projection=layer.get_projection()
-            geotransform=layer.get_geotransform()
-            continue
+            # If this is the first file, use it to initialize the aggregated one and stop processing
+            if I_sum is None:
+                I_sum = I
+                projection=layer.get_projection()
+                geotransform=layer.get_geotransform()
+                continue
 
-        # If it is not the first one, add it up if it has the right shape, otherwise, ignore it
-        if  I_sum.shape == I.shape:
-            I_sum = I_sum + I
-        else:
-            # Add them to a list of ignored files
-            ignored = ignored + 1
-            print 'Ignoring file %s because it is incomplete' % hazard_filename
+            # If it is not the first one, add it up if it has the right shape, otherwise, ignore it
+            if  I_sum.shape == I.shape:
+                I_sum = I_sum + I
+            else:
+                # Add them to a list of ignored files
+                ignored = ignored + 1
+                print 'Ignoring file %s because it is incomplete' % hazard_filename
 
     # Create raster object and return
     R = Raster(I_sum,
