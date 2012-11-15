@@ -8,7 +8,7 @@ def download_reference_layer():
     """
     pass
 
-def download_microwave(since, until):
+def download_microwave(date):
     """
     If microwave is available on the website download the all the available images 
     in the dates range (python datetime).
