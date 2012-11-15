@@ -100,6 +100,7 @@ def _flood_severity(hazard_files):
 
     print 'Accumulating layers'
 
+    I_sum_shape = None
     for hazard_filename in hazard_files:
         if os.path.exists(hazard_filename):
             print " - Processing %s" % hazard_filename
@@ -113,12 +114,13 @@ def _flood_severity(hazard_files):
             # If this is the first file, use it to initialize the aggregated one and stop processing
             if I_sum is None:
                 I_sum = I
+                I_sum_shape = I_sum.shape
                 projection=layer.get_projection()
                 geotransform=layer.get_geotransform()
                 continue
 
             # If it is not the first one, add it up if it has the right shape, otherwise, ignore it
-            if  I_sum.shape == I.shape:
+            if  I_sum_shape == I.shape:
                 I_sum = I_sum + I
             else:
                 # Add them to a list of ignored files
