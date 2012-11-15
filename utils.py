@@ -4,6 +4,20 @@ import urllib
 import subprocess
 import glob
 
+from safe.storage.raster import Raster
+
+def read_layer(filename):
+    """Read spatial layer from file.
+    This can be either raster or vector data.
+    """
+    _, ext = os.path.splitext(filename)
+    if ext in ['.asc', '.tif', '.nc', '.adf']:
+        return Raster(filename)
+    else:
+        msg = ('Could not read %s. '
+               'Extension "%s" has not been implemented' % (filename, ext))
+        raise ReadLayerError(msg)
+
 def viewports(bbox):
     """
     Inputs:

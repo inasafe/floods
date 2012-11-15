@@ -26,18 +26,6 @@ source:modis
 if not '/usr/local/bin' in os.environ['PATH']:
     os.environ['PATH'] = os.environ['PATH'] + ':/usr/local/bin'
 
-def read_layer(filename):
-    """Read spatial layer from file.
-    This can be either raster or vector data.
-    """
-    _, ext = os.path.splitext(filename)
-    if ext in ['.asc', '.tif', '.nc', '.adf']:
-        return Raster(filename)
-    else:
-        msg = ('Could not read %s. '
-               'Extension "%s" has not been implemented' % (filename, ext))
-        raise ReadLayerError(msg)
-
 def impact(hazard_files, exposure_file):
     """
     Calculate the impact of each of the hazards on the exposure
@@ -94,7 +82,7 @@ def _flood_severity(hazard_files):
 
     # This is a scalar but will end up being a matrix
     I_sum = None
-    CN_sum = None
+    cloud_matrix_sum = None
     projection = None
     geotransform = None
     total_days = len(hazard_files)
@@ -110,26 +98,26 @@ def _flood_severity(hazard_files):
         D = layer.get_data(nan=0.0) # Depth
         # Assign ones where it is affected
         I = numpy.where(D > water_threshold, 1, 0)
-        CN = numpy.where(D <= cloud_no_data_threshold, 1, 0)
+        cloud_matrix = numpy.where(D <= cloud_no_data_threshold, 1, 0)
 
         # If this is the first file, use it to initialize the aggregated one and stop processing
-        if I_sum is None and CN_sum is None:
+        if I_sum is None and cloud_matrix_sum is None:
             I_sum = I
-            CN_sum = CN
+            cloud_matrix_sum = cloud_matrix
             projection=layer.get_projection()
             geotransform=layer.get_geotransform()
             continue
 
         # If it is not the first one, add it up if it has the right shape, otherwise, ignore it
-        if  I_sum.shape == I.shape and CN_sum.shape == CN.shape:
+        if  I_sum.shape == I.shape and cloud_matrix_sum.shape == cloud_matrix.shape:
             I_sum = I_sum + I
-            CN_sum = CN_sum + CN
+            cloud_matrix_sum = cloud_matrix_sum + cloud_matrix
         else:
             # Add them to a list of ignored files
             ignored = ignored + 1
             print 'Ignoring file %s because it is incomplete' % hazard_filename
 
-    cloud_map = get_cloud_coverage(CN_sum, total_days, projection, geotransform)
+    cloud_map = get_cloud_coverage(cloud_matrix_sum, total_days, projection, geotransform)
 
     # TODO download microwave base on availability (use dates??)
     # if count cloud_map where 1 is 0, don't use microwave
@@ -173,41 +161,6 @@ def get_cloud_coverage(cn_sum, num_files, projection, geotransform):
     cc.write_to_file('source_map.tif')
 
     return cloud_exceed
-
-def download_microwave(dates):
-    """
-    If microwave is available on the website download the all the available images 
-    in the dates range (python datetime).
-    """
-
-    # veify the available number of files
-    pass
-
-def detect_microwave_flood(hazard_filename, microwave_filename):
-    """
-    Verify the microwave format to check whether it contains information on normal
-     water (reference water levels). Detect water
-    """
-    water_normal_level = 2
-    microwave_water_level = 70000
-
-    hazard_layer = read_layer(hazard_filename)
-    D = hazard_layer.get_data(nan=0.0)
-    # 0 is normal water, 1 is no normal water
-    I = numpy.where(D = water_normal_level , 0, 1)
-
-    # TODO resample and clip the microwave to the hazard resolution
-    # we know that microwave bbox is always > hazard bbox
-
-    microwave_layer = read_layer(microwave_filename)
-    M = microwave_layer.get_data(nan=0.0)
-    # 0 is normal water, 1 is not equal to normal water TODO: check in the nasa files have the same normal water in all the dates
-    MW = numpy.where(M = microwave_water_level, 1, 0)
-
-    # 0 is not flood water, 1 is flood water
-    MW_flood = MW * I
-
-    return MW_flood
 
 def start(west,north,east,south, since, until=None, data_dir=None, population=None):
     
