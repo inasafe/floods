@@ -102,7 +102,8 @@ def _flood_severity(hazard_files, microwave_date = None):
             # Extract data as numeric arrays
             D = layer.get_data(nan=0.0) # Depth
             # Assign ones where it is affected
-            I = numpy.where(D > threshold, 1, 0)
+            I = numpy.where(D > water_threshold, 1, 0)
+            C = numpy.where(D < water_threshold, 1, 0)
 
             # If this is the first file, use it to initialize the aggregated one and stop processing
             if I_sum is None:
@@ -112,9 +113,16 @@ def _flood_severity(hazard_files, microwave_date = None):
                 geotransform=layer.get_geotransform()
                 continue
 
+            if cloud_matrix_sum is None:
+                cloud_matrix_sum = C
+                projection=layer.get_projection()
+                geotransform=layer.get_geotransform()
+                continue
+
             # If it is not the first one, add it up if it has the right shape, otherwise, ignore it
             if  I_sum_shape == I.shape:
                 I_sum = I_sum + I
+                cloud_matrix_sum = cloud_matrix_sum + C
             else:
                 # Add them to a list of ignored files
                 ignored = ignored + 1
@@ -166,7 +174,7 @@ def get_cloud_coverage(cn_sum, num_files, projection, geotransform):
     Returns the numpy matrix. 
     """
     # Percentage of time where the pixel was covered by clouds
-    days_threshold = 0.7 * len(num_files)
+    days_threshold = 0.7 * num_files
 
     # 0 where we use NASA data, 1 is where we use microwave data
     # this also means that 0 is no cloud covered and 1 is cloud covered

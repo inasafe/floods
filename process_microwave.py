@@ -15,7 +15,7 @@ def download_microwave(date):
     """
 
     # veify the available number of files
-    pass
+    return 'test_microwave.tiff'
 
 def detect_microwave_flood(reference_layer, microwave_filename):
     """
@@ -27,7 +27,7 @@ def detect_microwave_flood(reference_layer, microwave_filename):
     reference_layer = read_layer(reference_layer)
     D = reference_layer.get_data(nan=0.0)
     # 0 is normal water, 1 is no normal water
-    I = numpy.where(D = water_normal_level , 0, 1)
+    I = numpy.where(D == water_normal_level , 0, 1)
 
     hazard_resolution = D.get_resolution()[0]
 
