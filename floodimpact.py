@@ -103,24 +103,25 @@ def _flood_severity(hazard_files, microwave_date = None):
             D = layer.get_data(nan=0.0) # Depth
             # Assign ones where it is affected
             I = numpy.where(D > water_threshold, 1, 0)
-            C = numpy.where(D < water_threshold, 1, 0)
+            C = numpy.where(D <= cloud_no_data_threshold, 1, 0)
 
             # If this is the first file, use it to initialize the aggregated one and stop processing
             if I_sum is None:
+                print 'Creating the flood sum matrix'
                 I_sum = I
                 I_sum_shape = I_sum.shape
                 projection=layer.get_projection()
-                geotransform=layer.get_geotransform()
-                continue
+                geotransform=layer.get_geotransform()  
 
             if cloud_matrix_sum is None:
+                print 'Creating the cloud sum matrix'
                 cloud_matrix_sum = C
                 projection=layer.get_projection()
                 geotransform=layer.get_geotransform()
-                continue
-
+                
             # If it is not the first one, add it up if it has the right shape, otherwise, ignore it
             if  I_sum_shape == I.shape:
+                print 'Adding data to the flood and cloud matrices'
                 I_sum = I_sum + I
                 cloud_matrix_sum = cloud_matrix_sum + C
             else:
@@ -142,8 +143,9 @@ def _flood_severity(hazard_files, microwave_date = None):
 
     if 1 in cloud_map and microwave_date is not None:
         microwave_file = download_microwave(microwave_date)
+        print 'Downloading microwave'
     
-        if len(microwave_files) > 0:
+        if microwave_file:
 
             microwave_flood = detect_microwave_flood(REFERENCE_LAYER_NAME,microwave_file)
 
@@ -151,8 +153,13 @@ def _flood_severity(hazard_files, microwave_date = None):
             # scale the under_cloud_flood to get total_days + 1 (under_cloud_map = under_cloud_floods * (total_days + 1))
             under_cloud_flood = (microwave_flood * cloud_map) * (total_days + 1)
 
+            print 'Adding microwave data to the result'
             # sum I_sum and under_cloud_map to get the mix of microwave and optical flooded areas
             I_sum += under_cloud_map
+
+    else:
+
+        print 'No clouds found'
 
     # Create raster object and return
     R = Raster(I_sum,
@@ -180,6 +187,7 @@ def get_cloud_coverage(cn_sum, num_files, projection, geotransform):
     # this also means that 0 is no cloud covered and 1 is cloud covered
     cloud_exceed = numpy.where(cn_sum > days_threshold, 1,0)
 
+    print 'Creating cloud coverage matrix'
     cc = Raster(cloud_exceed, projection=projection, geotransform=geotransform,name='Source map')
     cc.write_to_file('source_map.tif')
 

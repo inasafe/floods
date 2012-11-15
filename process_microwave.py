@@ -27,6 +27,8 @@ def detect_microwave_flood(reference_layer, microwave_filename):
     reference_layer = read_layer(reference_layer)
     D = reference_layer.get_data(nan=0.0)
     # 0 is normal water, 1 is no normal water
+
+    print 'Getting reference levels'
     I = numpy.where(D == water_normal_level , 0, 1)
 
     hazard_resolution = D.get_resolution()[0]
@@ -41,8 +43,10 @@ def detect_microwave_flood(reference_layer, microwave_filename):
     # TODO: check in the nasa files have the same normal water in all the dates
 
     microwave_water_level = define_microwave_water_level(D)
+
     MW = numpy.where(M <= microwave_water_level, 1, 0)
 
+    print 'Creating the microwave flood matrix'
     # 0 is not flood water, 1 is flood water
     MW_flood = MW * I
 
