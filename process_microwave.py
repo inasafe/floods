@@ -2,7 +2,13 @@ import numpy
 
 from utils import read_layer, clip
 
-def download_microwave(dates):
+def download_reference_layer():
+    """
+    Downloads and merge all the tiles of the needed reference layer from modis.
+    """
+    pass
+
+def download_microwave(since, until):
     """
     If microwave is available on the website download the all the available images 
     in the dates range (python datetime).
@@ -11,15 +17,15 @@ def download_microwave(dates):
     # veify the available number of files
     pass
 
-def detect_microwave_flood(hazard_filename, microwave_filename):
+def detect_microwave_flood(reference_layer, microwave_filename):
     """
     Verify the microwave format to check whether it contains information on normal
      water (reference water levels). Detect water
     """
     water_normal_level = 2
 
-    hazard_layer = read_layer(hazard_filename)
-    D = hazard_layer.get_data(nan=0.0)
+    reference_layer = read_layer(reference_layer)
+    D = reference_layer.get_data(nan=0.0)
     # 0 is normal water, 1 is no normal water
     I = numpy.where(D = water_normal_level , 0, 1)
 

@@ -16,6 +16,7 @@ from safe.storage.raster import Raster
 
 from utils import *
 from impact_functions import *
+from process_microwave import *
 
 FLOOD_KEYWORDS = """
 category:hazard
@@ -70,7 +71,7 @@ def calculate(hazard_filename, exposure_filename):
     calculated_raster = read_layer(impact_filename)
     return calculated_raster
 
-def _flood_severity(hazard_files):
+def _flood_severity(hazard_files, since, until):
     """
     Accumulate the hazard level
     """
@@ -118,18 +119,31 @@ def _flood_severity(hazard_files):
                 print 'Ignoring file %s because it is incomplete' % hazard_filename
 
     cloud_map = get_cloud_coverage(cloud_matrix_sum, total_days, projection, geotransform)
+    
+    # reverse the cloud map to get 0 where is cloudy with 1-cloud_map
+    inverse_cloud_map = 1 - cloud_map 
 
     # TODO download microwave base on availability (use dates??)
     # if count cloud_map where 1 is 0, don't use microwave
     # if there is a one in the map then get available microwaves
 
-    # if we got microwaves then microwave_flood=detect_microwave_flood
-    # multiply the cloud_map and the microwave_flood to get microwave flood under clouds (under_cloud_flood)
-
-    # reverse the cloud map to get 0 where is cloudy with 1-cloud_map
     # multiply inverse_cloud_map * I_sum to get just not cloudy floods
-    # scale the under_cloud_flood to get total_days + 1 (under_cloud_map = under_cloud_floods * (total_days + 1))
-    # sum I_sum and under_cloud_map to get the mix of microwave and optical flooded areas
+    I_sum = I_sum * inverse_cloud_map
+
+    if 1 in cloud_map:
+        microwave_files = download_microwave(since, until)
+    
+        if len(microwave_files) > 0:
+            for microwave_file in microwave_files:
+
+                microwave_flood = detect_microwave_flood(reference_layer_name,microwave_files)
+
+                # multiply the cloud_map and the microwave_flood to get microwave flood under clouds (under_cloud_flood)
+                # scale the under_cloud_flood to get total_days + 1 (under_cloud_map = under_cloud_floods * (total_days + 1))
+                under_cloud_flood = (microwave_flood * cloud_map) * (total_days + 1)
+
+                # sum I_sum and under_cloud_map to get the mix of microwave and optical flooded areas
+                I_sum += under_cloud_map
 
     # Create raster object and return
     R = Raster(I_sum,
@@ -201,7 +215,7 @@ def start(west,north,east,south, since, until=None, data_dir=None, population=No
         if len(merged_files) > 0:
             # Add all the pixels with a value higher than 3.
             #accumulate(merged_files, flood_filename, threshold=3)
-            flooded = _flood_severity(merged_files)
+            flooded = _flood_severity(merged_files, since, until)
             flooded.write_to_file(flood_filename)
 
             subprocess.call(['gdal_merge.py',
