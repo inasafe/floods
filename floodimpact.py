@@ -9,278 +9,34 @@ import glob
 import os
 import numpy
 
-from safe.api import read_layer, calculate_impact
-from safe.impact_functions.core import FunctionProvider
-from safe.impact_functions.core import get_hazard_layer, get_exposure_layers
+from functools import wraps
+
+from safe.api import calculate_impact
 from safe.storage.raster import Raster
 
-
-class ModisFloodImpactFunction(FunctionProvider):
-    """Risk plugin for flood impact
-
-    :author Ariel Núñez
-    :rating 1
-    :param requires category=='hazard' and \
-    subcategory=='flood' and \
-    layertype=='raster' and \
-    source=='modis'
-
-    :param requires category=='exposure' and \
-    subcategory=='population' and \
-    layertype=='raster' and \
-    datatype=='density'
-    """
-
-    plugin_name = 'flooded'
-
-    @staticmethod
-    def run(layers):
-        """Risk plugin for earthquake fatalities
-
-        Input
-        layers: List of layers expected to contain
-        H: Raster layer of flood depth
-        P: Raster layer of population data on the same grid as H
-        """
-
-        # Value above which people are regarded affected
-        # For this dataset, 0 is no data, 1 is cloud, 2 is normal water level
-        # and 3 is overflow.
-        threshold = 0
-
-        # Identify hazard and exposure layers
-        inundation = get_hazard_layer(layers)
-
-        [population] = get_exposure_layers(layers)
-
-        # Extract data as numeric arrays
-        D = inundation.get_data(nan=0.0) # Depth
-
-        # Scale the population layer
-        P = population.get_data(nan=0.0, scaling=True)
-        I = numpy.where(D > threshold, P, 0)
-
-        # Assume an evenly distributed population for Gender
-        G = 0.5
-        pregnant_ratio = 0.024 # 2.4% of women are estimated to be pregnant
-
-        # Calculate breakdown
-        P_female = P * G
-        P_male = P - P_female
-        P_pregnant = P_female * pregnant_ratio
-
-        I_female = I * G
-        I_male = I - I_female
-        I_pregnant = I_female * pregnant_ratio
-
-        # Generate text with result for this study
-        total = str(int(sum(P.flat) / 1000))
-        count = str(int(sum(I.flat) / 1000))
-
-        total_female = str(int(sum(P_female.flat) / 1000))
-        total_male = str(int(sum(P_male.flat) / 1000))
-        total_pregnant = str(int(sum(P_pregnant.flat) / 1000))
-
-        affected_female = str(int(sum(I_female.flat) / 1000))
-        affected_male = str(int(sum(I_male.flat) / 1000))
-        affected_pregnant = str(int(sum(I_pregnant.flat) / 1000))
-
-        # Create raster object and return
-        R = Raster(I,
-                   projection=inundation.get_projection(),
-                   geotransform=inundation.get_geotransform(),
-                   name='People affected',
-                   keywords={'total': total, 'count': count,
-                             'total_female': total_female, 'affected_female': affected_female,
-                             'total_male': total_male, 'affected_male': affected_male,
-                             'total_pregnant': total_pregnant, 'affected_pregnant': affected_pregnant,
-                            })
-        return R
-
-class ModisFloodDaysFunction(FunctionProvider):
-    """Risk plugin for severity of floods
-
-    :author Ariel Núñez
-    :rating 1
-    :param requires category=='hazard' and \
-    subcategory=='flood' and \
-    layertype=='raster' and \
-    source=='modis'
-
-    """
-
-    plugin_name = 'floodeddays'
-
-    @staticmethod
-    def run(layers):
-        """Risk plugin for earthquake fatalities
-
-        Input
-        layers: List of layers expected to contain flood layers for different days
-        """
-
-
-
-def viewports(bbox):
-    """
-    Inputs:
-        bbox: As a string in the following format: "0 20 20 0", multiples of
-        10.
-    Output:
-        viewports: A list of boxes of 10 x 10 degrees.
-    """
-    STEP = 10
-    west, north, east, south = bbox
-
-    lon_steps = (east - west) / STEP
-    lat_steps = (north - south) / STEP
-
-    the_viewports = [
-            '010E020N', # top right
-            '000E010N', # bottom left
-            '000E020N', # top left
-            '010E010N', # bottom right
-    ]
-
-    return the_viewports
-
-
-def timespan(since, until):
-    """
-    Inputs:
-        since: A datetime.date object
-        until: A datetime.date object
-    Output:
-        the_timespan: A list of time steps in the form "(year)(day of year)" (e.g. 2012214)
-    """
-    the_timespan = []
-    d = since
-    delta = datetime.timedelta(days=1)
-
-    while d <= until:
-        year = d.year
-        yday = d.timetuple().tm_yday
-        identifier = '%s%s' % (year, yday)
-        the_timespan.append(identifier)
-        d += delta
-
-    return the_timespan
-
-
-def download(the_viewports, the_timespan, data_dir):
-    """
-    Downloads layers from modis floodmap on the given viewport and timespan.
-
-    Inputs:
-        the_viewports: A list of 10 by 10 bounding boxes.
-        the_timespan: A list of times in the form year and day of year
-        data_dir: Output directory for the downloaded files. (Defaults to cwd)
-    """
-
-    site = "http://oas.gsfc.nasa.gov"
-    filename_templates = ["/Products/%(viewport)s/MWP_%(time)s_%(viewport)s_2D2OT.tif",
-                          "/Products/%(viewport)s/MWP_%(time)s_%(viewport)s_2D2ON.tif",
-                          #"/Products/%(viewport)s/MSW_%(time)s_%(viewport)s_2D2OT_V.zip",
-                          #"/Products/%(viewport)s/MSW_%(time)s_%(viewport)s_2D2ON_V.zip",
-                          ]
-
-    data_dir = os.path.abspath(data_dir)
-
-    # Iterate over viewports and times to get the urls
-    for time in the_timespan:
-        for viewport in the_viewports:
-            for template in filename_templates:
-                path = template % {'viewport': viewport, 'time': time}
-                url = site + path
-                name = url.split('/')[-1]
-                filename = os.path.join(data_dir, name)
-                if not os.path.exists(filename):
-                    if urllib.urlopen(url).code == 200:
-                        print 'opened connection to %s' % url
-                        urllib.urlretrieve(url, filename)
-
-
-def merge(the_timespan, data_dir, prefix="MWP"):
-    """
-    Merge all the files from a given timestamp
-    Inputs:
-        the_timespan: List of times in the form "(year)(day of year)"
-        data_dir: Location of files
-    Output:
-        out: List of files that were created during the merge
-    """
-    out = []
-    for time in the_timespan:
-        os.chdir(data_dir)
-        output_name = "floods_%s.tif" % time
-        output_file = os.path.join(data_dir, output_name)
-        if not os.path.exists(output_file):
-            print 'merging %s' % output_file
-            files = glob.glob('%s*%s*' % (prefix, time))
-            input_files = [os.path.join(data_dir, file) for file in files]
-            subprocess.call(['gdal_merge.py',
-                             '-co', 'compress=packbits',
-                             '-o', output_file]
-                             + input_files,
-                             stdout=open(os.devnull, 'w'))
-        if os.path.exists(output_file):
-            out.append(output_file)
-
-    return out
-
-
-def resample(files, population):
-    """
-    Resample the input files to the resolution of the population dataset.
-    """
-    p = read_layer(population)
-    res_x, res_y = p.get_resolution()
-    out = []
-    for input_file in files:
-        basename, ext = os.path.splitext(input_file)
-        sampled_output = basename + "_resampled" + ext
-        if not os.path.exists(sampled_output):
-            subprocess.call(['gdalwarp',
-                             '-tr', str(res_x), str(res_y),
-                             input_file, sampled_output],
-                             stdout=open(os.devnull, 'w'))
-        out.append(sampled_output)
-    return out
-
-
-def clip(population, bbox):
-    """
-    Clip the population dataset to the bounding box
-    """
-    basename, ext = os.path.splitext(population)
-    clipped_population = basename + "_clip" + ext
-    if not os.path.exists(clipped_population):
-        subprocess.call(['gdal_translate',
-                         '-projwin', str(bbox[0]), str(bbox[1]),
-                                    str(bbox[2]), str(bbox[3]),
-                         population, clipped_population],
-                         stdout=open(os.devnull, 'w'))
-
-    keywords_file = basename + '.keywords'
-
-    if os.path.exists(keywords_file):
-        basename, ext = os.path.splitext(clipped_population)
-
-        clipped_keywords_file = basename + '.keywords'
-
-        if not os.path.exists(clipped_keywords_file):
-            with open(keywords_file, 'r') as f:
-                with open(clipped_keywords_file, 'w') as cf:
-                    cf.write(f.read())
-
-    return clipped_population
-
+from utils import *
+from impact_functions import *
 
 FLOOD_KEYWORDS = """
 category:hazard
 subcategory:flood
 source:modis
 """
+
+if not '/usr/local/bin' in os.environ['PATH']:
+    os.environ['PATH'] = os.environ['PATH'] + ':/usr/local/bin'
+
+def read_layer(filename):
+    """Read spatial layer from file.
+    This can be either raster or vector data.
+    """
+    _, ext = os.path.splitext(filename)
+    if ext in ['.asc', '.tif', '.nc', '.adf']:
+        return Raster(filename)
+    else:
+        msg = ('Could not read %s. '
+               'Extension "%s" has not been implemented' % (filename, ext))
+        raise ReadLayerError(msg)
 
 def impact(hazard_files, exposure_file):
     """
@@ -326,7 +82,6 @@ def calculate(hazard_filename, exposure_filename):
     calculated_raster = read_layer(impact_filename)
     return calculated_raster
 
-
 def _flood_severity(hazard_files):
     """
     Accumulate the hazard level
@@ -344,8 +99,11 @@ def _flood_severity(hazard_files):
     geotransform = None
     total_days = len(hazard_files)
     ignored = 0
+
+    print 'Accumulating layers'
+
     for hazard_filename in hazard_files:
-        print "Processing %s" % hazard_filename
+        print " - Processing %s" % hazard_filename
         layer = read_layer(hazard_filename)
 
         # Extract data as numeric arrays
@@ -451,8 +209,8 @@ def detect_microwave_flood(hazard_filename, microwave_filename):
 
     return MW_flood
 
-def start(west,north,east,south, since, data_dir=None, until =None):
-
+def start(west,north,east,south, since, until=None, data_dir=None, population=None):
+    
     bbox = (west, north, east, south)
 
     year, month, day = [int(x) for x in since.split('-')]
@@ -472,40 +230,55 @@ def start(west,north,east,south, since, data_dir=None, until =None):
     the_viewports = viewports(bbox)
     the_timespan = timespan(since, until)
 
-    print 'viewports generated'
     data_dir = os.path.abspath(data_dir)
 
     if not os.path.exists(data_dir):
         os.mkdir(data_dir)
 
-    print 'Downloading layers'
+    print 'Downloading layers per day'
     # Download the layers for the given viewport and timespan.
     download(the_viewports, the_timespan, data_dir)
 
+    print 'Merging layers per day'
     merged_files = merge(the_timespan, data_dir)
 
-    population_file = os.path.join(data_dir, args.population)
+    flood_filename = os.path.join(data_dir, 'flood_severity.tif')
 
-    #resampled_files = resample(merged_files, population_file)
+    if not os.path.exists(flood_filename):
+        if len(merged_files) > 0:
+            # Add all the pixels with a value higher than 3.
+            #accumulate(merged_files, flood_filename, threshold=3)
+            flooded = _flood_severity(merged_files)
+            flooded.write_to_file(flood_filename)
 
-    temp = os.path.join(data_dir, 'flood_severity.tif')
-
-    if not os.path.exists(temp):
-        flood_severity = _flood_severity(merged_files)
-        flood_severity.write_to_file(temp)
-
-        subprocess.call(['gdal_merge.py',
+            subprocess.call(['gdal_merge.py',
                      '-co', 'compress=packbits',
                      '-o', 'flood_severity_compressed.tif',
-                     temp], stdout=open(os.devnull, 'w'))
-        os.remove(temp)
-        os.rename('flood_severity_compressed.tif', temp)
+                     '-ot', 'Byte',
+                     flood_filename], stdout=open(os.devnull, 'w'))
+            os.remove(flood_filename)
+            os.rename('flood_severity_compressed.tif', flood_filename)
+        else:
+            raise Exception('No merged files found for %s' % the_timespan)
+    
+    population_file = os.path.join(data_dir, population)
+    population_object = Raster(population_file)
+    # get population bbox
+    pop_bbox = population_object.get_bounding_box()
+
+    # get resolutions and pick the best
+    pop_resolution = population_object.get_resolution()[0]
+
+    hazard_object = Raster(flood_filename)
+    hazard_resolution = hazard_object.get_resolution()[0]
+    hazard_bbox = hazard_object.get_bounding_box()
+
+    if pop_bbox[0] > bbox[0] and pop_bbox[1] > bbox[1] and pop_bbox[2] < bbox[2] and pop_bbox[3] < bbox[3]:
+        hazard_file = clip(flood_filename, pop_bbox, cellSize=pop_resolution)
+        exposure_layer = population_file
     else:
-	flood_severity = read_layer(temp)
-    exposure_layer = clip(population_file, bbox)
-
-
-    [hazard_file] = resample([temp], exposure_layer)
+        hazard_file = clip(flood_filename, hazard_bbox, cellSize=pop_resolution)
+        exposure_layer = clip(population_file, hazard_bbox, cellSize=None)    
 
     basename, ext = os.path.splitext(hazard_file)
     keywords_file = basename + '.keywords'
@@ -520,15 +293,16 @@ def start(west,north,east,south, since, data_dir=None, until =None):
 
     count = impact.keywords['count']
     pretty_date = until.strftime('%a %d, %b %Y')
-#    print pretty_date, "|", "People affected: %s / %s" % (count, impact.keywords['total'])
+    print pretty_date, "|", "People affected: %s / %s" % (count, impact.keywords['total'])
+
 
 if __name__=="__main__":
     parser = argparse.ArgumentParser(description='Process flood imagery from modis.')
 
     parser.add_argument("west", type=int, help="west coordinate in lat long (e.g. 0)")
-    parser.add_argument("north", type=int, help="north coordinate in lat long (e.g. 20")
-    parser.add_argument("east", type=int, help="east coordinate in lat long (e.g. 20)")
     parser.add_argument("south", type=int, help="south coordinate in lat long (e.g. 0)")
+    parser.add_argument("east", type=int, help="east coordinate in lat long (e.g. 20)")
+    parser.add_argument("north", type=int, help="north coordinate in lat long (e.g. 20")
     parser.add_argument("since", type=str,
                         help="Day in the form of YYYY-MM-DD (e.g. 2012-01-23)")
 
@@ -546,4 +320,4 @@ if __name__=="__main__":
 
     args = parser.parse_args()
 
-    start(args.west,args.north,args.east,args.south, args.since, until=args.until, data_dir=args.data)
+    start(args.west, args.south, args.east, args.north, args.since, until=args.until, data_dir=args.data, population=args.population)
