@@ -35,7 +35,7 @@ def detect_microwave_flood(hazard_filename, microwave_filename):
     # TODO: check in the nasa files have the same normal water in all the dates
 
     microwave_water_level = define_microwave_water_level(D)
-    MW = numpy.where(M >= microwave_water_level, 1, 0)
+    MW = numpy.where(M <= microwave_water_level, 1, 0)
 
     # 0 is not flood water, 1 is flood water
     MW_flood = MW * I
@@ -50,4 +50,4 @@ def define_microwave_water_level(modis_flood_matrix):
     avg = numpy.average(modis_flood_matrix)
     std = numpy.std(modis_flood_matrix)
 
-    return avg - (2 * std)
+    return avg + (2 * std)
