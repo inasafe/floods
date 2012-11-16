@@ -11,7 +11,7 @@ def read_layer(filename):
     This can be either raster or vector data.
     """
     _, ext = os.path.splitext(filename)
-    if ext in ['.asc', '.tif', '.nc', '.adf']:
+    if ext in ['.asc', '.tif', '.nc', '.adf', '.tiff']:
         return Raster(filename)
     else:
         msg = ('Could not read %s. '

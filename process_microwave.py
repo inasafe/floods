@@ -1,41 +1,41 @@
-import numpy
+import numpy, os
 
 from utils import read_layer, clip
 
-def download_reference_layer():
+def download_reference_layer(data_dir):
     """
     Downloads and merge all the tiles of the needed reference layer from modis.
     """
-    pass
+    return os.path.join(data_dir, 'nigeria_water_mask.tif')
 
-def download_microwave(date):
+def download_microwave(date, data_dir):
     """
     If microwave is available on the website download the all the available images 
     in the dates range (python datetime).
     """
 
     # veify the available number of files
-    return 'test_microwave.tiff'
+    return os.path.join(data_dir,'test_microwave.tiff')
 
-def detect_microwave_flood(reference_layer, microwave_filename):
+def detect_microwave_flood(reference_layer, microwave_filename, bbox, res):
     """
     Verify the microwave format to check whether it contains information on normal
      water (reference water levels). Detect water
     """
     water_normal_level = 2
 
+    reference_layer = clip(reference_layer, bbox, res)
     reference_layer = read_layer(reference_layer)
+
     D = reference_layer.get_data(nan=0.0)
     # 0 is normal water, 1 is no normal water
 
     print 'Getting reference levels'
     I = numpy.where(D == water_normal_level , 0, 1)
 
-    hazard_resolution = D.get_resolution()[0]
-
     # Resample and clip the microwave to the hazard resolution
     # we know that microwave bbox is always > hazard bbox
-    clipped_microwave = clip(microwave_filename, D.get_bounding_box(), cellSize=hazard_resolution)
+    clipped_microwave = clip(microwave_filename, bbox, cellSize=res)
 
     microwave_layer = read_layer(clipped_microwave)
     M = microwave_layer.get_data(nan=0.0)
