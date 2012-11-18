@@ -2,31 +2,39 @@ import numpy, os
 
 from utils import read_layer, clip
 
-def download_reference_layer(data_dir):
+def download_reference_layer():
     """
     Downloads and merge all the tiles of the needed reference layer from modis.
     """
-    return os.path.join(data_dir, 'nigeria_water_mask.tif')
+    return 'nigeria_water_mask.tif'
 
-def download_microwave(date, data_dir):
+def download_microwave(date):
     """
     If microwave is available on the website download the all the available images 
     in the dates range (python datetime).
     """
 
     # veify the available number of files
-    return os.path.join(data_dir,'test_microwave.tiff')
+    return 'test_microwave.tiff'
 
-def detect_microwave_flood(reference_layer, microwave_filename, bbox, res):
+def detect_microwave_flood(microwave_date, bbox, resolution, data_dir):
     """
     Verify the microwave format to check whether it contains information on normal
      water (reference water levels). Detect water
     """
+    
+    microwave_filename = os.path.join(data_dir, download_microwave(microwave_date))
+
+    reference_filename = os.path.join(data_dir, download_reference_layer())
+
     water_normal_level = 2
 
-    reference_layer = clip(reference_layer, bbox, res)
-    reference_layer = read_layer(reference_layer)
+    print 'Clipping reference layer to %s and bbox %s' % (resolution, bbox)
 
+    reference_layer = clip(reference_filename, bbox, resolution)
+    
+    reference_layer = read_layer(reference_layer)
+    
     D = reference_layer.get_data(nan=0.0)
     # 0 is normal water, 1 is no normal water
 
@@ -35,7 +43,7 @@ def detect_microwave_flood(reference_layer, microwave_filename, bbox, res):
 
     # Resample and clip the microwave to the hazard resolution
     # we know that microwave bbox is always > hazard bbox
-    clipped_microwave = clip(microwave_filename, bbox, cellSize=res)
+    clipped_microwave = clip(microwave_filename, bbox, cellSize=resolution)
 
     microwave_layer = read_layer(clipped_microwave)
     M = microwave_layer.get_data(nan=0.0)

@@ -16,13 +16,9 @@ from safe.storage.raster import Raster
 
 from utils import *
 from impact_functions import *
-from process_microwave import *
+from process_microwave import detect_microwave_flood
 
-FLOOD_KEYWORDS = """
-category:hazard
-subcategory:flood
-source:modis
-"""
+from settings import FLOOD_KEYWORDS, DEBUG
 
 if not '/usr/local/bin' in os.environ['PATH']:
     os.environ['PATH'] = os.environ['PATH'] + ':/usr/local/bin'
@@ -82,92 +78,98 @@ def _flood_severity(hazard_files, data_dir, microwave_date = None):
     cloud_no_data_threshold = 1
 
     # This is a scalar but will end up being a matrix
-    I_sum = None
+    flood_matrix_sum = None
+    flood_matrix_sum_shape = None
     cloud_matrix_sum = None
+
     projection = None
     geotransform = None
     total_days = len(hazard_files)
     ignored = 0
-    bbox = None
-    resolution = None
 
     print 'Accumulating layers'
+    
+    if DEBUG and os.path.exists(os.path.join(data_dir, 'cloud_matrix_sum.tif')) and os.path.exists(os.path.join(data_dir, 'flood_matrix_sum.tif')):
+        cloud_matrix_sum = Raster(os.path.join(data_dir, 'cloud_matrix_sum.tif'))
+        flood_matrix_sum = Raster(os.path.join(data_dir, 'flood_matrix_sum.tif'))
+        projection = cloud_matrix_sum.get_projection()
+        geotransform = cloud_matrix_sum.get_geotransform()
+        cloud_matrix_sum = cloud_matrix_sum.get_data()
+        flood_matrix_sum = flood_matrix_sum.get_data()
+        flood_matrix_sum_shape = flood_matrix_sum.shape
 
-    I_sum_shape = None
-    for hazard_filename in hazard_files:
-        if os.path.exists(hazard_filename):
-            print " - Processing %s" % hazard_filename
-            layer = read_layer(hazard_filename)
-            bbox = layer.get_bounding_box()
-            resolution = layer.get_resolution()[0]
+    else: 
+        for hazard_filename in hazard_files:
+            if os.path.exists(hazard_filename):
+                print " - Processing %s" % hazard_filename
+                layer = read_layer(hazard_filename)
 
-            # Extract data as numeric arrays
-            D = layer.get_data(nan=0.0) # Depth
-            # Assign ones where it is affected
-            I = numpy.where(D > water_threshold, 1, 0)
-            C = numpy.where(D <= cloud_no_data_threshold, 1, 0)
+                # Extract data as numeric arrays
+                D = layer.get_data(nan=0.0) # Depth
+                # Assign ones where it is affected
+                I = numpy.where(D > water_threshold, 1, 0)
+                C = numpy.where(D <= cloud_no_data_threshold, 1, 0)
 
-            # If this is the first file, use it to initialize the aggregated one and stop processing
-            if I_sum is None:
-                print 'Creating the flood sum matrix'
-                I_sum = I
-                I_sum_shape = I_sum.shape
-                projection=layer.get_projection()
-                geotransform=layer.get_geotransform()  
+                # If this is the first file, use it to initialize the aggregated one and stop processing
+                if flood_matrix_sum is None:
+                    print 'Creating the flood sum matrix'
+                    flood_matrix_sum = I
+                    flood_matrix_sum_shape = flood_matrix_sum.shape
+                    projection=layer.get_projection()
+                    geotransform=layer.get_geotransform()  
 
-            if cloud_matrix_sum is None:
-                print 'Creating the cloud sum matrix'
-                cloud_matrix_sum = C
-                projection=layer.get_projection()
-                geotransform=layer.get_geotransform()
-                
-            # If it is not the first one, add it up if it has the right shape, otherwise, ignore it
-            if  I_sum_shape == I.shape:
-                print 'Adding data to the flood and cloud matrices'
-                I_sum = I_sum + I
-                cloud_matrix_sum = cloud_matrix_sum + C
-            else:
-                # Add them to a list of ignored files
-                ignored = ignored + 1
-                print 'Ignoring file %s because it is incomplete' % hazard_filename
+                if cloud_matrix_sum is None:
+                    print 'Creating the cloud sum matrix'
+                    cloud_matrix_sum = C
+                    projection=layer.get_projection()
+                    geotransform=layer.get_geotransform()
+                    
+                # If it is not the first one, add it up if it has the right shape, otherwise, ignore it
+                if  flood_matrix_sum_shape == I.shape:
+                    print 'Adding data to the flood and cloud matrices'
+                    flood_matrix_sum = flood_matrix_sum + I
+                    cloud_matrix_sum = cloud_matrix_sum + C
+                else:
+                    # Add them to a list of ignored files
+                    ignored = ignored + 1
+                    print 'Ignoring file %s because it is incomplete' % hazard_filename
+        Raster(flood_matrix_sum, projection = projection, geotransform = geotransform).write_to_file('flood_matrix_sum.tif')
+        Raster(cloud_matrix_sum, projection = projection, geotransform = geotransform).write_to_file('cloud_matrix_sum.tif')
 
     if not os.path.exists(os.path.join(data_dir, 'source_map.tif')):
         cloud_map = get_cloud_coverage(cloud_matrix_sum, total_days, projection, geotransform)
     else:
-        cloud_map = Raster(os.path.join(data_dir, 'source_map.tif')).get_data()
-    
-    # reverse the cloud map to get 0 where is cloudy with 1-cloud_map
-    inverse_cloud_map = 1 - cloud_map 
+        cloud_map = Raster(os.path.join(data_dir, 'source_map.tif'))
+    cloud_map_data = cloud_map.get_data()
 
-    # TODO download microwave base on availability (use dates??)
-    # if count cloud_map where 1 is 0, don't use microwave
-    # if there is a one in the map then get available microwaves
+    if 1 in cloud_map_data and microwave_date is not None:
 
-    # multiply inverse_cloud_map * I_sum to get just not cloudy floods
-    I_sum = I_sum * inverse_cloud_map
+        # reverse the cloud map to get 0 where is cloudy with 1-cloud_map
+        inverse_cloud_map = 1 - cloud_map_data
 
-    if 1 in cloud_map and microwave_date is not None:
-        microwave_file = download_microwave(microwave_date, data_dir)
-        print 'Downloading microwave'
-    
-        if microwave_file:
+        # TODO download microwave base on availability (use dates??)
+        # if count cloud_map where 1 is 0, don't use microwave
+        # if there is a one in the map then get available microwaves
 
-            microwave_flood = detect_microwave_flood(download_reference_layer(data_dir),microwave_file, bbox, resolution)
+        # multiply inverse_cloud_map * flood_matrix_sum to get just not cloudy floods
+        flood_matrix_sum = flood_matrix_sum * inverse_cloud_map
 
-            # multiply the cloud_map and the microwave_flood to get microwave flood under clouds (under_cloud_flood)
-            # scale the under_cloud_flood to get total_days + 1 (under_cloud_map = under_cloud_floods * (total_days + 1))
-            under_cloud_flood = (microwave_flood * cloud_map) * (total_days + 1)
+        microwave_flood = detect_microwave_flood(microwave_date, cloud_map.get_bounding_box(), cloud_map.get_resolution()[0], data_dir)
 
-            print 'Adding microwave data to the result'
-            # sum I_sum and under_cloud_map to get the mix of microwave and optical flooded areas
-            I_sum += under_cloud_map
+        # multiply the cloud_map and the microwave_flood to get microwave flood under clouds (under_cloud_flood)
+        # scale the under_cloud_flood to get total_days + 1 (under_cloud_map = under_cloud_floods * (total_days + 1))
+        under_cloud_flood = (microwave_flood * cloud_map_data) * (total_days + 1)
+
+        print 'Adding microwave data to the result'
+        # sum I_sum and under_cloud_map to get the mix of microwave and optical flooded areas
+        flood_matrix_sum += under_cloud_flood
 
     else:
 
         print 'No clouds found'
 
     # Create raster object and return
-    R = Raster(I_sum,
+    R = Raster(flood_matrix_sum,
                projection=projection,
                geotransform=geotransform,
                name='People affected',
@@ -193,10 +195,10 @@ def get_cloud_coverage(cn_sum, num_files, projection, geotransform):
     cloud_exceed = numpy.where(cn_sum > days_threshold, 1,0)
 
     print 'Creating cloud coverage matrix'
-    cc = Raster(cloud_exceed, projection=projection, geotransform=geotransform,name='Source map')
-    cc.write_to_file('source_map.tif')
+    cloud_map = Raster(cloud_exceed, projection=projection, geotransform=geotransform,name='Source map')
+    cloud_map.write_to_file('source_map.tif')
 
-    return cloud_exceed
+    return cloud_map
 
 def start(west,north,east,south, since, until=None, data_dir=None, population=None):
     
