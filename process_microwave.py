@@ -15,7 +15,7 @@ def download_microwave(date):
     """
 
     # veify the available number of files
-    return 'test_microwave.tiff'
+    return 'test_microwave.tif'
 
 def detect_microwave_flood(microwave_date, bbox, resolution, data_dir):
     """
@@ -27,7 +27,7 @@ def detect_microwave_flood(microwave_date, bbox, resolution, data_dir):
 
     reference_filename = os.path.join(data_dir, download_reference_layer())
 
-    water_normal_level = 2
+    water_normal_level = 1
 
     print 'Clipping reference layer to %s and bbox %s' % (resolution, bbox)
 
@@ -50,9 +50,9 @@ def detect_microwave_flood(microwave_date, bbox, resolution, data_dir):
     # 0 is normal water, 1 is not equal to normal water 
     # TODO: check in the nasa files have the same normal water in all the dates
 
-    microwave_water_level = define_microwave_water_level(D)
+    microwave_water_level = define_microwave_water_level(M, I)
 
-    MW = numpy.where(M <= microwave_water_level, 1, 0)
+    MW = numpy.where(M >= microwave_water_level, 1, 0)
 
     print 'Creating the microwave flood matrix'
     # 0 is not flood water, 1 is flood water
@@ -60,12 +60,17 @@ def detect_microwave_flood(microwave_date, bbox, resolution, data_dir):
 
     return MW_flood
 
-def define_microwave_water_level(modis_flood_matrix):
+def define_microwave_water_level(microwave_matrix, reference_matrix):
     """
     Calculate the microwave water level based on modis flood data.
     Input data is the flood_severity matrix.
     """
-    avg = numpy.average(modis_flood_matrix)
-    std = numpy.std(modis_flood_matrix)
 
-    return avg + (2 * std)
+    microwave_subset = microwave_matrix.compress((reference_matrix == 1).flat)
+
+
+    avg = numpy.average(microwave_subset)
+    std = numpy.std(microwave_subset)
+
+    print len(microwave_subset), avg, std
+    return avg + (0.5 * std)

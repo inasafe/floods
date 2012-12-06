@@ -74,7 +74,7 @@ def _flood_severity(hazard_files, data_dir, microwave_date = None):
     # Value above which people are regarded affected
     # For this dataset, 0 is no data, 1 is cloud, 2 is normal water level
     # and 3 is overflow.
-    water_threshold = 3
+    overflow_value = 3
     cloud_no_data_threshold = 1
 
     # This is a scalar but will end up being a matrix
@@ -107,7 +107,7 @@ def _flood_severity(hazard_files, data_dir, microwave_date = None):
                 # Extract data as numeric arrays
                 D = layer.get_data(nan=0.0) # Depth
                 # Assign ones where it is affected
-                I = numpy.where(D > water_threshold, 1, 0)
+                I = numpy.where(D == overflow_value, 1, 0)
                 C = numpy.where(D <= cloud_no_data_threshold, 1, 0)
 
                 # If this is the first file, use it to initialize the aggregated one and stop processing
@@ -155,6 +155,7 @@ def _flood_severity(hazard_files, data_dir, microwave_date = None):
         flood_matrix_sum = flood_matrix_sum * inverse_cloud_map
 
         microwave_flood = detect_microwave_flood(microwave_date, cloud_map.get_bounding_box(), cloud_map.get_resolution()[0], data_dir)
+        Raster(microwave_flood, projection = projection, geotransform = geotransform).write_to_file('microwave_flood.tif')
 
         # multiply the cloud_map and the microwave_flood to get microwave flood under clouds (under_cloud_flood)
         # scale the under_cloud_flood to get total_days + 1 (under_cloud_map = under_cloud_floods * (total_days + 1))
